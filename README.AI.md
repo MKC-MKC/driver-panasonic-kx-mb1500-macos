@@ -177,12 +177,25 @@ sudo installer -pkg dist/Panasonic-KX-MB1500-haikiri-0.1.0.pkg -target /
 
 Компонент **печати** внутри продукта ставит PPD, нативный фильтр и helper-скрипты; если принтер подключён по USB во время установки, создаётся CUPS-очередь. Подготовка сканера выполняется при сборке, а не при установке.
 
-Скрипт `./scripts/build-pkg.sh` монтирует `artifacts/Mac_1.15.2.dmg`, извлекает только `Panasonic MFS Scanner.app` из `panasonicMfsScanner.pkg` и подготавливает его существующим repair-скриптом. Сборка `productbuild` включает два компонента: `scanner.pkg` и `print.pkg`. Вложенного `Install.pkg` и вызова `installer` из postinstall нет.
+Скрипт `./scripts/build-pkg.sh` монтирует `artifacts/Mac_1.15.2.dmg`, извлекает только `Panasonic MFS Scanner.app` из `panasonicMfsScanner.pkg` и подготавливает его существующим repair-скриптом. Сборка `productbuild` включает `scanner.pkg`, `print.pkg` и `cleanup.pkg`. Вложенного `Install.pkg` и вызова `installer` из postinstall нет.
 
 В готовом `.pkg` пользователь выбирает компоненты:
 
-- **Печать**: выбрана всегда, отключение запрещено.
 - **Сканер (Rosetta)**: выключен по умолчанию, доступен для включения.
+- **Печать**: выбрана всегда, кроме режима очистки; ручное отключение запрещено.
+- **Delete Drivers: Panasonic MFS**: выключен по умолчанию; при включении сканер и печать сняты и заблокированы.
+
+После снятия очистки возвращается прежний выбор сканера и обязательная печать.
+Взаимное исключение использует `enabled` у choice и `active` у pkg-ref, как в Sasquatch.
+Переменные JavaScript текущего сеанса Installer сохраняют галочку сканера на время очистки;
+при закрытии установщика этот выбор не сохраняется на диск.
+
+Компонент очистки не имеет payload: `components/cleanup/scripts/postinstall` вызывает соседний
+`panasonic-uninstaller.sh`, который сборщик помещает в Scripts. Удаляются только проверенные пути MFS,
+очереди Panasonic, профильные настройки пользователей и receipt драйверов.
+Документы, сканы, репозитории и другие приложения Panasonic не удаляются.
+Общие Ghostscript и libjpeg удаляются только при наличии receipt соответствующего пакета Panasonic.
+Receipt самого `cleanup.pkg` остаётся как запись выполненной операции, драйверов он не содержит.
 
 Отдельного пункта Rosetta нет. На Intel scanner backend работает напрямую, на Apple Silicon через Rosetta.
 

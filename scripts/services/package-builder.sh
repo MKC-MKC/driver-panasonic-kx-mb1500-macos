@@ -22,4 +22,12 @@ PLIST
 			--filter '/\._.*' --filter '/\.DS_Store$' \
 			"$build_dir/components/$component.pkg"
 	done
+
+	# Очистка выполняется отдельным компонентом без установки файлов на диск.
+	mkdir -p "$build_dir/scripts-cleanup"
+	install -m 0755 "$REPO_ROOT/components/cleanup/scripts/postinstall" "$build_dir/scripts-cleanup/"
+	install -m 0644 "$REPO_ROOT/scripts/services/panasonic-uninstaller.sh" "$build_dir/scripts-cleanup/"
+	pkgbuild --nopayload --scripts "$build_dir/scripts-cleanup" \
+		--identifier ru.haikiri.panasonic-kx-mb1500.cleanup --version "$version" \
+		"$build_dir/components/cleanup.pkg"
 }
