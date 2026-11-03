@@ -41,6 +41,7 @@ prepare_scanner_payload() {
 
 prepare_print_payload() {
 	local build_dir="$1"
+	local version="$2"
 	local payload="$build_dir/payload-print"
 	local install_root="$payload/usr/local/haikiri/panasonic-kx-mb1500"
 	local filter_path="$REPO_ROOT/printer/filter/bin/panasonic-kx-mb1500-gdi"
@@ -53,6 +54,12 @@ prepare_print_payload() {
 		"$payload/Library/Printers/Panasonic/Filter" "$install_root/scripts/helper"
 	install -m 0644 "$REPO_ROOT/printer/ppd/Panasonic_KX-MB1500-haikiri.ppd" \
 		"$payload/Library/Printers/PPDs/Contents/Resources/"
+	# Версия драйвера в настройках печати совпадает с версией собираемого пакета.
+	awk -v version="$version" '
+		/^\*FileVersion:/ { $0 = "*FileVersion: \"" version "\"" }
+		{ print }
+	' "$REPO_ROOT/printer/ppd/Panasonic_KX-MB1500-haikiri.ppd" \
+		> "$payload/Library/Printers/PPDs/Contents/Resources/Panasonic_KX-MB1500-haikiri.ppd"
 	install -m 0755 "$filter_path" "$payload/Library/Printers/Panasonic/Filter/"
 	install -m 0755 "$REPO_ROOT/scripts/install-driver.sh" "$REPO_ROOT/scripts/verify-print.sh" \
 		"$install_root/scripts/"

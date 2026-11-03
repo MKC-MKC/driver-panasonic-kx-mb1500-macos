@@ -16,7 +16,7 @@ main() {
 	export COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1
 
 	prepare_scanner_payload "$build_dir"
-	prepare_print_payload "$build_dir"
+	prepare_print_payload "$build_dir" "$version"
 	build_component_packages "$build_dir" "$version"
 	write_package_distribution "$build_dir/Distribution.xml" "$version"
 	productbuild --distribution "$build_dir/Distribution.xml" \
