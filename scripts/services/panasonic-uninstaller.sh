@@ -68,7 +68,7 @@ panasonic_remove_path() {
 
 	# Ссылку удаляем отдельно: её цель может находиться вне драйвера.
 	if [ -L "$path" ]; then
-		/usr/bin/unlink "$path"
+		/bin/unlink "$path"
 		return
 	fi
 	parent="$(/usr/bin/dirname "$path")"

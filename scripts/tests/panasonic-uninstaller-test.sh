@@ -39,7 +39,7 @@ assert_false() {
 
 # Даже при ошибке в проверке путей тест не сможет удалить настоящий файл.
 function /usr/bin/find() { printf 'blocked find\n'; }
-function /usr/bin/unlink() { printf 'blocked unlink\n'; }
+function /bin/unlink() { printf 'blocked unlink\n'; }
 
 function /usr/bin/lpstat() {
 	assert_eq '-v' "$1" 'queue inspection must request device URIs'
@@ -119,10 +119,46 @@ test_path_boundaries() {
 	done
 }
 
+test_real_removal() (
+	local repo_root fixture
+
+	# Проверяем реальные системные команды на собственных временных файлах, без моков удаления.
+	unset -f /usr/bin/find /usr/bin/unlink /bin/unlink
+	repo_root="$(cd "$SCRIPT_DIR/../.." && pwd)"
+	mkdir -p "$repo_root/build"
+	fixture="$(mktemp -d "$repo_root/build/uninstaller-real-delete.XXXXXX")"
+	trap '/usr/bin/find -P -x "$fixture" -depth -delete' EXIT
+
+	# Разрешаем только тестовые пути; сам production-код удаления остаётся неизменным.
+	panasonic_user_path_allowed() {
+		case "$1" in "$fixture/scanner link"|"$fixture/dangling"|"$fixture/tree") return 0 ;; esac
+		return 1
+	}
+	mkdir -p "$fixture/target" "$fixture/tree/nested"
+	printf 'preserve\n' > "$fixture/target/sentinel"
+	printf 'remove\n' > "$fixture/tree/nested/file"
+	ln -s "$fixture/target" "$fixture/scanner link"
+	ln -s "$fixture/missing" "$fixture/dangling"
+	ln -s "$fixture/target" "$fixture/tree/target-link"
+
+	# Ссылка исчезает, её цель и содержимое остаются; разорванная ссылка также удаляется.
+	panasonic_remove_path "$fixture/scanner link"
+	assert_false 'the scanner symlink must be removed' test -L "$fixture/scanner link"
+	assert_true 'the symlink target must remain' test -f "$fixture/target/sentinel"
+	panasonic_remove_path "$fixture/dangling"
+	assert_false 'a dangling symlink must be removed' test -L "$fixture/dangling"
+
+	# Каталог с файлами и вложенной ссылкой удаляется без перехода к её цели.
+	panasonic_remove_path "$fixture/tree"
+	assert_false 'the driver tree must be removed' test -e "$fixture/tree"
+	assert_true 'a nested symlink target must remain' test -f "$fixture/target/sentinel"
+)
+
 main() {
 	local expected
 
 	test_path_boundaries
+	test_real_removal
 
 	# Проверяем настоящую фильтрацию очередей для локализованного вывода и принтера за роутером.
 	expected='removed:Panasonic_KX_MB1500RU
