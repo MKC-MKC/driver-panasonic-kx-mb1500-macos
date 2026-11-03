@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Rosetta нужна только выбранному сканеру на Apple Silicon, а печать работает без неё.
+if [ "$(/usr/sbin/sysctl -in hw.optional.arm64)" = "1" ]; then
+	if ! /usr/bin/arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+		/usr/sbin/softwareupdate --install-rosetta --agree-to-license
+	fi
+fi
+
+/usr/bin/arch -x86_64 /usr/bin/true

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly APP_PATH="/Library/Image Capture/Devices/Panasonic MFS Scanner.app"
+
+/usr/bin/codesign --verify --deep --strict "$APP_PATH"
+/usr/bin/killall "Panasonic MFS Scanner" icdd >/dev/null 2>&1 || true

@@ -21,7 +21,7 @@
 - `scripts/install-driver.sh` - установка PPD, фильтра, создание CUPS-очереди и best-effort repair scanner backend.
 - `scripts/verify-print.sh` - проверка очереди и отправка тестовой страницы в реальный USB-принтер.
 - `scripts/repair-scanner-ica.sh` - ремонт установленного `Panasonic MFS Scanner.app` для Image Capture.
-- `scripts/build-pkg.sh` - сборка `.pkg`, который ставит PPD, фильтр и helper-скрипты в систему.
+- `scripts/build-pkg.sh` - сборка product `.pkg` (печать, вложенный Panasonic `Install.pkg` из DMG, repair ICA; `productbuild` + экран «Настроить»).
 - `printer/docker/Dockerfile` - build/research окружение, не runtime печати.
 - `artifacts/` - локальные архивы/исходники Panasonic; содержимое не коммитится.
 
@@ -64,7 +64,9 @@ file printer/filter/bin/panasonic-kx-mb1500-gdi
 ./scripts/install-driver.sh
 ```
 
-Команда установит PPD:
+Опционально: `./scripts/install-driver.sh --ppd-only` ставит только PPD и фильтр (без очереди и без repair); сочетание `./scripts/install-driver.sh --without-scanner-repair` отключает repair при создании очереди.
+
+Команда по умолчанию установит PPD:
 
 ```text
 /Library/Printers/PPDs/Contents/Resources/Panasonic_KX-MB1500-haikiri.ppd
@@ -86,7 +88,7 @@ Panasonic_KX_MB1500CX
 
 Скрипт сам найдёт локальный USB URI через `lpinfo -v`; серийник не записывается в файлы проекта.
 
-Дополнительно `install-driver.sh` теперь всегда пытается выполнить `repair-scanner-ica.sh` внутри основного install flow:
+Дополнительно полный запуск `./scripts/install-driver.sh` (без `--ppd-only` и без `--without-scanner-repair`) пытается выполнить `repair-scanner-ica.sh` внутри основного install flow:
 
 - если `Panasonic MFS Scanner.app` уже установлен, install flow попробует сразу починить ICA backend для `Image Capture`;
 - если scanner app ещё не установлен, этот шаг будет просто пропущен;
@@ -173,9 +175,38 @@ dist/Panasonic-KX-MB1500-haikiri-0.1.0.pkg
 sudo installer -pkg dist/Panasonic-KX-MB1500-haikiri-0.1.0.pkg -target /
 ```
 
-Пакет ставит PPD, нативный фильтр и helper-скрипты. Если принтер подключён по USB во время установки, пакет также создаёт CUPS-очередь.
+Компонент **печати** внутри продукта ставит PPD, нативный фильтр и helper-скрипты; если принтер подключён по USB во время установки, создаётся CUPS-очередь. Подготовка сканера выполняется при сборке, а не при установке.
 
-Scanner repair отдельно из `postinstall` больше не вызывается, потому что этот шаг уже встроен в основной `install-driver.sh` и всегда выполняется там в режиме best-effort.
+Скрипт `./scripts/build-pkg.sh` монтирует `artifacts/Mac_1.15.2.dmg`, извлекает только `Panasonic MFS Scanner.app` из `panasonicMfsScanner.pkg` и подготавливает его существующим repair-скриптом. Сборка `productbuild` включает `scanner.pkg`, `print.pkg` и `cleanup.pkg`. Вложенного `Install.pkg` и вызова `installer` из postinstall нет.
+
+В готовом `.pkg` пользователь выбирает компоненты:
+
+- **Сканер (Rosetta)**: выключен по умолчанию, доступен для включения.
+- **Печать**: выбрана всегда, кроме режима очистки; ручное отключение запрещено.
+- **Delete Drivers: Panasonic MFS**: выключен по умолчанию; при включении сканер и печать сняты и заблокированы.
+
+После снятия очистки возвращается прежний выбор сканера и обязательная печать.
+Взаимное исключение использует `enabled` у choice и `active` у pkg-ref, как в Sasquatch.
+Переменные JavaScript текущего сеанса Installer сохраняют галочку сканера на время очистки;
+при закрытии установщика этот выбор не сохраняется на диск.
+
+Компонент очистки не имеет payload: `components/cleanup/scripts/postinstall` вызывает соседний
+`panasonic-uninstaller.sh`, который сборщик помещает в Scripts. Удаляются только проверенные пути MFS,
+очереди Panasonic, профильные настройки пользователей и receipt драйверов.
+Документы, сканы, репозитории и другие приложения Panasonic не удаляются.
+Общие Ghostscript и libjpeg удаляются только при наличии receipt соответствующего пакета Panasonic.
+Receipt самого `cleanup.pkg` остаётся как запись выполненной операции, драйверов он не содержит.
+
+Отдельного пункта Rosetta нет. На Intel scanner backend работает напрямую, на Apple Silicon через Rosetta.
+
+`scripts/services/package-payload.sh` готовит содержимое, `package-builder.sh` собирает компоненты,
+`package-distribution.sh` задаёт выбор в Installer. Скрипты установки находятся в `components/`.
+В scanner payload входит только приложение с двумя shim; MFS GUI, TWAIN datasource, факс,
+pushserver и launch daemon не включаются. Все внешние зависимости scanner app системные.
+Пустой component plist фиксирует установку scanner app в `/Library/Image Capture/Devices/`.
+На целевом Mac не нужны Command Line Tools.
+
+При запуске из репозитория `./scripts/install-driver.sh` без флагов по-прежнему выполняет best-effort repair, если установлен `Panasonic MFS Scanner.app`. Флаги: `--ppd-only` (только PPD и фильтр), `--without-scanner-repair` (очередь/полная установка без repair).
 
 ## Архитектуры
 
@@ -210,26 +241,15 @@ Panasonic на этой странице прямо указывает:
 
 ### Полная настройка сканера с нуля
 
-Ниже последовательность, которую можно выполнить с чистой системы, чтобы завести сканирование именно через `Image Capture`.
+Используется собранный продуктовый `.pkg`, в котором приложение сканера уже подготовлено.
+
+Ниже шаги с чистой системы, чтобы завести сканирование через `Image Capture`.
 
 1. Подключить `Panasonic KX-MB1500*` по USB и включить устройство.
 
-2. Если Mac на Apple Silicon, установить Rosetta, потому что официальный scanner backend Panasonic остаётся `x86_64`:
-
-```bash
-softwareupdate --install-rosetta --agree-to-license
-```
-
-3. Скачать официальный macOS-дистрибутив Panasonic:
-
-- страница: [https://docs.connect.panasonic.com/pcc/support/fax/common/table/macdriver.html](https://docs.connect.panasonic.com/pcc/support/fax/common/table/macdriver.html)
-- прямой файл: [https://www.psn-web.net/cs/support/fax/common/file/Mac_Installer/Mac_1.15.2.dmg](https://www.psn-web.net/cs/support/fax/common/file/Mac_Installer/Mac_1.15.2.dmg)
-
-4. Открыть `Mac_1.15.2.dmg` и запустить `Install.pkg`.
-
-5. Дождаться завершения установки Panasonic `Multi-Function Station`.
-
-6. Проверить, что в системе действительно появился ICA backend Panasonic:
+2. Открыть собранный `.pkg`. Установщик работает нативно на Intel и Apple Silicon; печать не требует Rosetta.
+3. Печать устанавливается всегда. При необходимости включить «Сканер (Rosetta)» и завершить установку. На Apple Silicon preinstall выбранного сканера устанавливает Rosetta штатным softwareupdate, если Intel-код ещё не запускается. На Intel этот шаг пропускается. Проверок, запрещающих выбор сканера по версии macOS, нет; для работы backend необходима фактическая возможность запуска x86_64.
+4. Проверить, что в системе действительно появился ICA backend Panasonic:
 
 ```bash
 ls -la "/Library/Image Capture/Devices/Panasonic MFS Scanner.app"
@@ -237,27 +257,13 @@ ls -la "/Library/Image Capture/Devices/Panasonic MFS Scanner.app"
 
 Если этого `.app` нет, то дальше `Image Capture` не заработает, потому что системе не с чем разговаривать со сканером.
 
-7. Перейти в корень этого репозитория и повторно запустить основной установщик:
-
-```bash
-./scripts/install-driver.sh
-```
-
-Этот запуск автоматически попытается выполнить repair scanner backend внутри себя.
-
-8. Если нужен ручной повтор только scanner-ремонта, можно отдельно выполнить:
-
-```bash
-./scripts/repair-scanner-ica.sh
-```
-
-9. Открыть системное приложение `Image Capture`:
+5. Открыть системное приложение `Image Capture`:
 
 ```bash
 open -a "Image Capture"
 ```
 
-10. В списке устройств выбрать `Panasonic KX-MB1500*`, задать папку назначения, формат и выполнить тестовый скан.
+6. В списке устройств выбрать `Panasonic KX-MB1500*`, задать папку назначения, формат и выполнить тестовый скан.
 
 ### Что делает repair-script
 
@@ -273,12 +279,17 @@ Expected in: /System/Library/Frameworks/Carbon.framework/Versions/A/Carbon
 - собирает x86_64 `CarbonShim.dylib`;
 - реэкспортирует через него системные `Carbon` и `ICADevices`;
 - перепривязывает Panasonic binary с `Carbon.framework` на shim;
+- добавляет `ObjCMsgFixupShim.dylib` для старого Objective-C ABI и перепривязывает `libobjc`;
+- применяет существующее исправление USB handshake;
 - переподписывает `.app` ad-hoc;
-- перезапускает `icdd`, чтобы `Image Capture` увидел исправленный backend.
+- в ручном режиме перезапускает `icdd`, чтобы `Image Capture` увидел исправленный backend.
+
+Режим `--prepare-app /путь/к/копии.app` выполняет те же исправления при сборке без root
+и перезапуска служб. Системное приложение в этом режиме изменять нельзя.
 
 ### Проверка результата
 
-После установки Panasonic-пакета и прогона repair-script в системе должен существовать такой backend:
+После установки собранного пакета в системе должен существовать такой backend:
 
 ```bash
 ls -la "/Library/Image Capture/Devices/Panasonic MFS Scanner.app"

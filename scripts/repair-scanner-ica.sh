@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly APP_PATH="/Library/Image Capture/Devices/Panasonic MFS Scanner.app"
+readonly MODE="${1:-}"
+readonly INSTALLED_APP_PATH="/Library/Image Capture/Devices/Panasonic MFS Scanner.app"
+if [ "$MODE" = "--prepare-app" ]; then
+    [ "$#" -eq 2 ] && [ -n "$2" ] || { printf 'ERROR: укажи путь к копии scanner app\n' >&2; exit 1; }
+    readonly APP_PATH="$2"
+else
+    readonly APP_PATH="$INSTALLED_APP_PATH"
+fi
 readonly BINARY_PATH="$APP_PATH/Contents/MacOS/Panasonic MFS Scanner"
 readonly FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
 readonly SHIM_PATH="$FRAMEWORKS_DIR/CarbonShim.dylib"
@@ -10,7 +17,6 @@ readonly SYSTEM_CARBON="/System/Library/Frameworks/Carbon.framework/Versions/A/C
 readonly SHIM_CARBON="@executable_path/../Frameworks/CarbonShim.dylib"
 readonly SYSTEM_LIBOBJC="/usr/lib/libobjc.A.dylib"
 readonly SHIM_LIBOBJC="@executable_path/../Frameworks/ObjCMsgFixupShim.dylib"
-readonly MODE="${1:-}"
 
 fail() {
     printf 'ERROR: %s\n' "$1" >&2
@@ -257,7 +263,12 @@ restart_image_capture_services() {
 }
 
 main() {
-    run_as_admin_if_needed
+    # При сборке меняем только app в payload, не запрашивая root и не затрагивая запущенный сканер.
+    if [ "$MODE" != "--prepare-app" ]; then
+        run_as_admin_if_needed
+    elif [ "$(cd "$APP_PATH" && pwd -P)" = "$INSTALLED_APP_PATH" ]; then
+        fail "режим --prepare-app предназначен только для копии приложения"
+    fi
 
     # Ремонтируем только уже установленный официальный Panasonic ICA backend.
     [ -d "$APP_PATH" ] || fail "Panasonic MFS Scanner.app не найден: $APP_PATH"
@@ -275,7 +286,10 @@ main() {
     patch_binary_linkage
     patch_legacy_open_device_handshake
     sign_scanner_app
-    restart_image_capture_services
+    codesign --verify --deep --strict "$APP_PATH"
+    if [ "$MODE" != "--prepare-app" ]; then
+        restart_image_capture_services
+    fi
 
     printf 'Repaired Panasonic Image Capture backend: %s\n' "$APP_PATH"
 }
