@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly INSTALL_ROOT="/usr/local/haikiri/panasonic-kx-mb1500"
+source "$INSTALL_ROOT/scripts/helper/panasonic_model.sh"
+
+"$INSTALL_ROOT/scripts/install-driver.sh" --ppd-only
+if find_available_panasonic_mb1500_uri >/dev/null 2>&1; then
+	"$INSTALL_ROOT/scripts/install-driver.sh" --without-scanner-repair
+fi

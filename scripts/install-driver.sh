@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PPD_NAME="Panasonic_KX-MB1500-haikiri.ppd"
-readonly PPD_SOURCE_DIR="$(cd "$SCRIPT_DIR/../printer/ppd" && pwd)"
+readonly PPD_SOURCE_DIR="$SCRIPT_DIR/../printer/ppd"
 readonly PPD_SOURCE_PATH="$PPD_SOURCE_DIR/$PPD_NAME"
 readonly PPD_INSTALL_DIR="/Library/Printers/PPDs/Contents/Resources"
 readonly PPD_INSTALL_PATH="$PPD_INSTALL_DIR/$PPD_NAME"
